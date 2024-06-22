@@ -11,14 +11,6 @@ def modificar_pdf(archivo, modo_frase=True):
         
         for pagina in doc:
             texto = pagina.get_text("dict")
-            st.write(f"Procesando página {pagina.number + 1}")
-st.write(f"Número de bloques: {len(texto['blocks'])}")
-for bloque in texto["blocks"]:
-    if "lines" in bloque:
-        for linea in bloque["lines"]:
-            for span in linea["spans"]:
-                if es_cursiva(span["font"]):
-                    st.write(f"Texto en cursiva encontrado: {span['text']}")
             for bloque in texto["blocks"]:
                 if "lines" in bloque:
                     for linea in bloque["lines"]:
