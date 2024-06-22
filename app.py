@@ -8,20 +8,23 @@ def modificar_pdf(archivo):
         doc = fitz.open(stream=archivo.read(), filetype="pdf")
         
         for pagina in doc:
-            texto_cursiva = ""
-            for bloque in pagina.get_text("dict")["blocks"]:
-                if "lines" in bloque:
-                    for linea in bloque["lines"]:
-                        for span in linea["spans"]:
-                            if "italic" in span["font"].lower():
-                                texto_original = span["text"]
+            # Obtener el texto de la página con información de estilo
+            blocks = pagina.get_text("dict")["blocks"]
+            for b in blocks:
+                if "lines" in b:
+                    for l in b["lines"]:
+                        for s in l["spans"]:
+                            if "italic" in s["font"].lower():
+                                # Obtener las coordenadas del texto
+                                x0, y0, x1, y1 = s["bbox"]
+                                texto_original = s["text"]
                                 texto_modificado = f"_{texto_original}_"
                                 
-                                # Reemplazar directamente el texto
-                                pagina.search_for(texto_original)
-                                pagina.add_redact_annot(span["bbox"])
-                                pagina.apply_redactions()
-                                pagina.insert_text(span["origin"], texto_modificado, fontname=span["font"], fontsize=span["size"])
+                                # Crear un rectángulo blanco para cubrir el texto original
+                                pagina.draw_rect([x0, y0, x1, y1], color=(1, 1, 1), fill=(1, 1, 1))
+                                
+                                # Insertar el nuevo texto
+                                pagina.insert_text((x0, y0), texto_modificado, fontsize=s["size"], color=(0, 0, 0))
 
         # Guardar el PDF modificado en memoria
         output_buffer = io.BytesIO()
