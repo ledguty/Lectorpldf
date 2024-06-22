@@ -1,83 +1,67 @@
 import streamlit as st
 import fitz
 import io
-from docx import Document
-from docx.shared import Pt
-import re
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import simpleSplit
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
-def es_cursiva(font):
-    return "italic" in font.lower() or "oblique" in font.lower()
-
-def modificar_pdf(archivo):
+def procesar_pdf(archivo):
     try:
         doc = fitz.open(stream=archivo.read(), filetype="pdf")
-        texto_completo = ""
+        buffer = io.BytesIO()
+        pdf_output = canvas.Canvas(buffer, pagesize=letter)
         
-        for pagina in doc:
-            texto = pagina.get_text("dict")
-            for bloque in texto["blocks"]:
-                if "lines" in bloque:
-                    for linea in bloque["lines"]:
-                        for span in linea["spans"]:
-                            if es_cursiva(span["font"]):
-                                texto_completo += f"_{span['text']}_"
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            pdf_output.setPageSize((page.rect.width, page.rect.height))
+            
+            blocks = page.get_text("dict")["blocks"]
+            for block in blocks:
+                if "lines" in block:
+                    for line in block["lines"]:
+                        text = ""
+                        for span in line["spans"]:
+                            if "italic" in span["font"].lower():
+                                text += f"_{span['text']}_"
                             else:
-                                texto_completo += span["text"]
-                        texto_completo += "\n"
-                    texto_completo += "\n"
+                                text += span["text"]
+                        
+                        # Aplicar lógica similar a la macro
+                        if text.strip() and not text.strip().endswith(('.', ':', ')', '?', '_')) and not text.strip()[-1].isdigit():
+                            text += " "
+                        else:
+                            text += "\n"
+                        
+                        pdf_output.setFont("Helvetica", 10)
+                        y = page.rect.height - line["bbox"][1]
+                        pdf_output.drawString(line["bbox"][0], y, text)
+            
+            pdf_output.showPage()
         
+        pdf_output.save()
         doc.close()
-        return texto_completo
+        
+        buffer.seek(0)
+        return buffer
+    
     except Exception as e:
         st.error(f"Error al procesar el archivo: {str(e)}")
         return None
 
-def procesar_texto(texto):
-    # Eliminar saltos de línea específicos
-    lineas = texto.split('\n')
-    texto_procesado = ""
-    for i in range(len(lineas)):
-        if i < len(lineas) - 1:
-            linea_actual = lineas[i].strip()
-            if linea_actual and not linea_actual.endswith(('.', ':', ')', '?', '_')) and not linea_actual[-1].isdigit():
-                texto_procesado += linea_actual + " "
-            else:
-                texto_procesado += linea_actual + "\n"
-        else:
-            texto_procesado += lineas[i]
-    
-    return texto_procesado
-
-def crear_documento_word(texto):
-    doc = Document()
-    for parrafo in texto.split('\n'):
-        p = doc.add_paragraph()
-        partes = re.split(r'(_[^_]+_)', parrafo)
-        for parte in partes:
-            if parte.startswith('_') and parte.endswith('_'):
-                run = p.add_run(parte[1:-1])
-                run.italic = True
-            else:
-                p.add_run(parte)
-    
-    output_buffer = io.BytesIO()
-    doc.save(output_buffer)
-    return output_buffer.getvalue()
-
-st.title("Convertir PDF a Word con modificaciones")
-st.write("Sube un archivo PDF para convertirlo a Word, añadiendo guiones bajos a las cursivas y aplicando formato específico.")
+st.title("Modificador de PDF - Eliminar ciertos saltos de línea")
+st.write("Sube un archivo PDF para eliminar ciertos saltos de línea y mantener el formato.")
 
 archivo = st.file_uploader("Subir archivo PDF", type="pdf")
 
 if archivo is not None:
     if st.button("Procesar PDF"):
-        texto_modificado = modificar_pdf(archivo)
-        if texto_modificado:
-            texto_procesado = procesar_texto(texto_modificado)
-            docx_modificado = crear_documento_word(texto_procesado)
+        pdf_modificado = procesar_pdf(archivo)
+        if pdf_modificado:
             st.download_button(
-                label="Descargar documento Word modificado",
-                data=docx_modificado,
-                file_name="documento_modificado.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                label="Descargar PDF modificado",
+                data=pdf_modificado,
+                file_name="pdf_modificado.pdf",
+                mime="application/pdf"
             )
