@@ -4,9 +4,6 @@ import pytesseract
 from PIL import Image
 import io
 
-# Asegúrate de tener instalado Tesseract y configurada la ruta correctamente
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Ajusta esta ruta según tu instalación
-
 def extraer_texto_pdf(archivo_pdf):
     texto_completo = ""
     imagenes = convert_from_bytes(archivo_pdf.read())
