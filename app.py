@@ -2,31 +2,40 @@ import streamlit as st
 import fitz
 import io
 
-def modificar_pdf(archivo):
+def modificar_pdf(archivo, modo_frase=True):
     try:
-        # Abrir el PDF
         doc = fitz.open(stream=archivo.read(), filetype="pdf")
         
         for pagina in doc:
-            # Obtener el texto de la página con información de estilo
             blocks = pagina.get_text("dict")["blocks"]
             for b in blocks:
                 if "lines" in b:
                     for l in b["lines"]:
+                        frase_cursiva = ""
+                        bbox_frase = None
                         for s in l["spans"]:
                             if "italic" in s["font"].lower():
-                                # Obtener las coordenadas del texto
-                                x0, y0, x1, y1 = s["bbox"]
-                                texto_original = s["text"]
-                                texto_modificado = f"_{texto_original}_"
-                                
-                                # Crear un rectángulo blanco para cubrir el texto original
-                                pagina.draw_rect([x0, y0, x1, y1], color=(1, 1, 1), fill=(1, 1, 1))
-                                
-                                # Insertar el nuevo texto
-                                pagina.insert_text((x0, y0), texto_modificado, fontsize=s["size"], color=(0, 0, 0))
+                                if modo_frase:
+                                    if not frase_cursiva:
+                                        bbox_frase = s["bbox"]
+                                    frase_cursiva += s["text"] + " "
+                                else:
+                                    texto_modificado = f"_{s['text']}_"
+                                    pagina.add_redact_annot(s["bbox"], text=texto_modificado)
+                                    pagina.apply_redactions()
+                            else:
+                                if modo_frase and frase_cursiva:
+                                    texto_modificado = f"_{frase_cursiva.strip()}_"
+                                    pagina.add_redact_annot(bbox_frase, text=texto_modificado)
+                                    pagina.apply_redactions()
+                                    frase_cursiva = ""
+                                    bbox_frase = None
+                        
+                        if modo_frase and frase_cursiva:
+                            texto_modificado = f"_{frase_cursiva.strip()}_"
+                            pagina.add_redact_annot(bbox_frase, text=texto_modificado)
+                            pagina.apply_redactions()
 
-        # Guardar el PDF modificado en memoria
         output_buffer = io.BytesIO()
         doc.save(output_buffer, garbage=4, deflate=True, clean=True)
         doc.close()
@@ -41,9 +50,11 @@ st.write("Sube un archivo PDF para añadir guiones bajos a las frases en cursiva
 
 archivo = st.file_uploader("Subir archivo PDF", type="pdf")
 
+modo_frase = st.checkbox("Añadir guiones bajos a frases completas en cursiva", value=True)
+
 if archivo is not None:
     if st.button("Procesar PDF"):
-        pdf_modificado = modificar_pdf(archivo)
+        pdf_modificado = modificar_pdf(archivo, modo_frase)
         if pdf_modificado:
             st.download_button(
                 label="Descargar PDF modificado",
