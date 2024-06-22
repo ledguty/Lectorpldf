@@ -1,50 +1,35 @@
 import streamlit as st
 from pdf2image import convert_from_bytes
-import pytesseract
 from PIL import Image
 import io
-import subprocess
+import base64
 
-# Verificar la instalación de Tesseract
-try:
-    tesseract_version = subprocess.check_output(['tesseract', '--version']).decode('utf-8')
-    st.sidebar.success(f"Tesseract instalado: {tesseract_version.split()[1]}")
-except:
-    st.sidebar.error("Tesseract no está instalado o no se puede acceder a él.")
+def pdf_to_img(pdf_bytes):
+    return convert_from_bytes(pdf_bytes)
 
-def extraer_texto_pdf(archivo_pdf):
-    texto_completo = ""
-    imagenes = convert_from_bytes(archivo_pdf.read())
-    
-    for imagen in imagenes:
-        texto = pytesseract.image_to_string(imagen, lang='spa')
-        texto_completo += texto + "\n\n"  # Añade saltos de página
-    
-    return texto_completo.strip()
+def get_image_download_link(img, filename, text):
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    href = f'<a href="data:file/png;base64,{img_str}" download="{filename}">{text}</a>'
+    return href
 
-st.title("Extractor de Texto PDF (Manteniendo Diseño)")
+st.title("Visualizador de PDF (Manteniendo Diseño)")
 
 archivo_subido = st.file_uploader("Sube tu archivo PDF", type="pdf")
 
 if archivo_subido is not None:
     try:
-        texto_extraido = extraer_texto_pdf(archivo_subido)
+        imagenes = pdf_to_img(archivo_subido.read())
         
-        st.subheader("Texto extraído:")
-        st.text_area("", texto_extraido, height=500)
-        
-        if st.button("Copiar texto"):
-            st.write("Texto copiado al portapapeles!")
-            st.text_area("Texto copiado:", texto_extraido)
+        for i, img in enumerate(imagenes):
+            st.subheader(f"Página {i+1}")
+            st.image(img, use_column_width=True)
+            
+            # Botón para descargar la imagen
+            st.markdown(get_image_download_link(img, f"pagina_{i+1}.png", f"Descargar página {i+1}"), unsafe_allow_html=True)
+            
+            st.write("---")  # Separador entre páginas
 
-        buffer = io.BytesIO()
-        buffer.write(texto_extraido.encode())
-        buffer.seek(0)
-        st.download_button(
-            label="Descargar texto",
-            data=buffer,
-            file_name="texto_extraido.txt",
-            mime="text/plain"
-        )
     except Exception as e:
         st.error(f"Error al procesar el PDF: {str(e)}")
