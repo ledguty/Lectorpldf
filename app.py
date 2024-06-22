@@ -1,103 +1,66 @@
 import streamlit as st
 import fitz
-import io
-from docx import Document
-from docx.shared import Pt
-from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-import re
-
-def es_cursiva(font):
-    return "italic" in font.lower() or "oblique" in font.lower()
-
-def modificar_pdf(archivo):
-    try:
-        doc = fitz.open(stream=archivo.read(), filetype="pdf")
-        contenido = []
-        
-        for pagina in doc:
-            bloques = pagina.get_text("dict")["blocks"]
-            for bloque in bloques:
-                if "lines" in bloque:
-                    parrafo = ""
-                    for linea in bloque["lines"]:
-                        for span in linea["spans"]:
-                            texto = span["text"]
-                            if es_cursiva(span["font"]):
-                                texto = f"_{texto}_"
-                            parrafo += texto
-                        parrafo += "\n"
-                    contenido.append({
-                        "texto": parrafo.strip(),
-                        "bbox": bloque["bbox"],
-                        "tipo": "texto"
-                    })
-                elif "image" in bloque:
-                    contenido.append({
-                        "bbox": bloque["bbox"],
-                        "tipo": "imagen"
-                    })
-        
-        doc.close()
-        return contenido
-    except Exception as e:
-        st.error(f"Error al procesar el archivo: {str(e)}")
-        return None
+import base64
 
 def procesar_texto(texto):
     lineas = texto.split('\n')
     texto_procesado = ""
-    for i in range(len(lineas)):
-        linea_actual = lineas[i].strip()
-        if linea_actual:
-            if i < len(lineas) - 1 and not linea_actual.endswith(('.', ':', ')', '?', '_')) and not linea_actual[-1].isdigit():
-                texto_procesado += linea_actual + " "
+    for i, linea in enumerate(lineas):
+        linea = linea.strip()
+        if linea:
+            if i < len(lineas) - 1 and not linea.endswith(('.', ':', ')', '?', '_')) and not linea[-1].isdigit():
+                texto_procesado += linea + " "
             else:
-                texto_procesado += linea_actual + "\n"
+                texto_procesado += linea + "\n"
     return texto_procesado
 
-def crear_documento_word(contenido):
-    doc = Document()
-    for item in contenido:
-        if item["tipo"] == "texto":
-            texto_procesado = procesar_texto(item["texto"])
-            p = doc.add_paragraph()
-            partes = re.split(r'(_[^_]+_)', texto_procesado)
-            for parte in partes:
-                if parte.startswith('_') and parte.endswith('_'):
-                    run = p.add_run(parte[1:-1])
-                    run.italic = True
-                else:
-                    p.add_run(parte)
-            
-            # Alineación basada en la posición del bloque
-            if item["bbox"][0] < 100:  # Ajusta este valor según sea necesario
-                p.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
-            elif item["bbox"][0] > 300:  # Ajusta este valor según sea necesario
-                p.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
-            else:
-                p.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-        
-        elif item["tipo"] == "imagen":
-            # Aquí podrías añadir un marcador de posición para las imágenes
-            doc.add_paragraph("[Imagen]")
-    
-    output_buffer = io.BytesIO()
-    doc.save(output_buffer)
-    return output_buffer.getvalue()
+def extraer_texto_pdf(archivo_pdf):
+    texto_completo = ""
+    try:
+        doc = fitz.open(stream=archivo_pdf.read(), filetype="pdf")
+        for pagina in doc:
+            texto_completo += pagina.get_text()
+        doc.close()
+    except Exception as e:
+        st.error(f"Error al procesar el archivo PDF: {str(e)}")
+    return texto_completo
 
-st.title("Convertir PDF a Word con formato preservado")
-st.write("Sube un archivo PDF para convertirlo a Word, preservando el formato y aplicando reglas específicas de salto de línea.")
+def mostrar_pdf(archivo_pdf):
+    base64_pdf = base64.b64encode(archivo_pdf.read()).decode('utf-8')
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="700" height="1000" type="application/pdf"></iframe>'
+    st.markdown(pdf_display, unsafe_allow_html=True)
+
+st.title("Visualizador de PDF con Extracción de Texto")
+st.write("Sube un archivo PDF para visualizarlo y extraer su texto sin saltos de línea innecesarios.")
 
 archivo = st.file_uploader("Subir archivo PDF", type="pdf")
 
 if archivo is not None:
-    if st.button("Procesar PDF"):
-        contenido_modificado = modificar_pdf(archivo)
-        if contenido_modificado:
-            docx_modificado = crear_documento_word(contenido_modificado)
-            st.download_button(
-                label="Descargar documento Word modificado",
-                data=docx_modificado,
-                file_name="documento_modificado.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Visualización del PDF")
+        mostrar_pdf(archivo)
+    
+    with col2:
+        st.subheader("Texto Extraído")
+        texto_original = extraer_texto_pdf(archivo)
+        texto_procesado = procesar_texto(texto_original)
+        st.text_area("Texto sin saltos de línea innecesarios:", value=texto_procesado, height=400)
+        
+        # Botón para copiar el texto al portapapeles
+        st.markdown(
+            f"""
+            <textarea id="texto_para_copiar" style="position: absolute; left: -9999px;">{texto_procesado}</textarea>
+            <button onclick="copyToClipboard()">Copiar Texto</button>
+            <script>
+            function copyToClipboard() {{
+                var copyText = document.getElementById("texto_para_copiar");
+                copyText.select();
+                document.execCommand("copy");
+                alert("Texto copiado al portapapeles");
+            }}
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
