@@ -14,15 +14,27 @@ def modificar_pdf(archivo):
             for bloque in bloques:
                 if "lines" in bloque:
                     for linea in bloque["lines"]:
+                        texto_cursiva = ""
+                        bbox_cursiva = None
                         for span in linea["spans"]:
                             if "italic" in span["font"].lower():
-                                # Modificar el texto en cursiva
-                                palabras = re.findall(r'\w+', span["text"])
-                                nuevo_texto = " ".join([f"_{palabra}_" for palabra in palabras])
-                                
-                                # Reemplazar el texto original con el nuevo texto
-                                pagina.add_redact_annot(span["bbox"], text=nuevo_texto)
-                                pagina.apply_redactions()
+                                if not texto_cursiva:
+                                    bbox_cursiva = span["bbox"]
+                                texto_cursiva += span["text"] + " "
+                            else:
+                                if texto_cursiva:
+                                    # Procesar el texto en cursiva acumulado
+                                    nuevo_texto = f"_{texto_cursiva.strip()}_"
+                                    pagina.add_redact_annot(bbox_cursiva, text=nuevo_texto)
+                                    pagina.apply_redactions()
+                                    texto_cursiva = ""
+                                    bbox_cursiva = None
+                        
+                        # Procesar cualquier texto en cursiva restante al final de la línea
+                        if texto_cursiva:
+                            nuevo_texto = f"_{texto_cursiva.strip()}_"
+                            pagina.add_redact_annot(bbox_cursiva, text=nuevo_texto)
+                            pagina.apply_redactions()
 
         # Guardar el PDF modificado en memoria
         output_buffer = io.BytesIO()
@@ -35,7 +47,7 @@ def modificar_pdf(archivo):
         return None
 
 st.title("Modificador de PDF - Añadir guiones bajos a texto en cursiva")
-st.write("Sube un archivo PDF para añadir guiones bajos a las palabras en cursiva y descarga el PDF modificado.")
+st.write("Sube un archivo PDF para añadir guiones bajos a las frases en cursiva y descarga el PDF modificado.")
 
 archivo = st.file_uploader("Subir archivo PDF", type="pdf")
 
