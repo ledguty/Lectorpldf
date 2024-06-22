@@ -1,67 +1,103 @@
 import streamlit as st
 import fitz
 import io
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import simpleSplit
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+import re
 
-def procesar_pdf(archivo):
+def es_cursiva(font):
+    return "italic" in font.lower() or "oblique" in font.lower()
+
+def modificar_pdf(archivo):
     try:
         doc = fitz.open(stream=archivo.read(), filetype="pdf")
-        buffer = io.BytesIO()
-        pdf_output = canvas.Canvas(buffer, pagesize=letter)
+        contenido = []
         
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            pdf_output.setPageSize((page.rect.width, page.rect.height))
-            
-            blocks = page.get_text("dict")["blocks"]
-            for block in blocks:
-                if "lines" in block:
-                    for line in block["lines"]:
-                        text = ""
-                        for span in line["spans"]:
-                            if "italic" in span["font"].lower():
-                                text += f"_{span['text']}_"
-                            else:
-                                text += span["text"]
-                        
-                        # Aplicar lógica similar a la macro
-                        if text.strip() and not text.strip().endswith(('.', ':', ')', '?', '_')) and not text.strip()[-1].isdigit():
-                            text += " "
-                        else:
-                            text += "\n"
-                        
-                        pdf_output.setFont("Helvetica", 10)
-                        y = page.rect.height - line["bbox"][1]
-                        pdf_output.drawString(line["bbox"][0], y, text)
-            
-            pdf_output.showPage()
+        for pagina in doc:
+            bloques = pagina.get_text("dict")["blocks"]
+            for bloque in bloques:
+                if "lines" in bloque:
+                    parrafo = ""
+                    for linea in bloque["lines"]:
+                        for span in linea["spans"]:
+                            texto = span["text"]
+                            if es_cursiva(span["font"]):
+                                texto = f"_{texto}_"
+                            parrafo += texto
+                        parrafo += "\n"
+                    contenido.append({
+                        "texto": parrafo.strip(),
+                        "bbox": bloque["bbox"],
+                        "tipo": "texto"
+                    })
+                elif "image" in bloque:
+                    contenido.append({
+                        "bbox": bloque["bbox"],
+                        "tipo": "imagen"
+                    })
         
-        pdf_output.save()
         doc.close()
-        
-        buffer.seek(0)
-        return buffer
-    
+        return contenido
     except Exception as e:
         st.error(f"Error al procesar el archivo: {str(e)}")
         return None
 
-st.title("Modificador de PDF - Eliminar ciertos saltos de línea")
-st.write("Sube un archivo PDF para eliminar ciertos saltos de línea y mantener el formato.")
+def procesar_texto(texto):
+    lineas = texto.split('\n')
+    texto_procesado = ""
+    for i in range(len(lineas)):
+        linea_actual = lineas[i].strip()
+        if linea_actual:
+            if i < len(lineas) - 1 and not linea_actual.endswith(('.', ':', ')', '?', '_')) and not linea_actual[-1].isdigit():
+                texto_procesado += linea_actual + " "
+            else:
+                texto_procesado += linea_actual + "\n"
+    return texto_procesado
+
+def crear_documento_word(contenido):
+    doc = Document()
+    for item in contenido:
+        if item["tipo"] == "texto":
+            texto_procesado = procesar_texto(item["texto"])
+            p = doc.add_paragraph()
+            partes = re.split(r'(_[^_]+_)', texto_procesado)
+            for parte in partes:
+                if parte.startswith('_') and parte.endswith('_'):
+                    run = p.add_run(parte[1:-1])
+                    run.italic = True
+                else:
+                    p.add_run(parte)
+            
+            # Alineación basada en la posición del bloque
+            if item["bbox"][0] < 100:  # Ajusta este valor según sea necesario
+                p.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            elif item["bbox"][0] > 300:  # Ajusta este valor según sea necesario
+                p.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+            else:
+                p.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        
+        elif item["tipo"] == "imagen":
+            # Aquí podrías añadir un marcador de posición para las imágenes
+            doc.add_paragraph("[Imagen]")
+    
+    output_buffer = io.BytesIO()
+    doc.save(output_buffer)
+    return output_buffer.getvalue()
+
+st.title("Convertir PDF a Word con formato preservado")
+st.write("Sube un archivo PDF para convertirlo a Word, preservando el formato y aplicando reglas específicas de salto de línea.")
 
 archivo = st.file_uploader("Subir archivo PDF", type="pdf")
 
 if archivo is not None:
     if st.button("Procesar PDF"):
-        pdf_modificado = procesar_pdf(archivo)
-        if pdf_modificado:
+        contenido_modificado = modificar_pdf(archivo)
+        if contenido_modificado:
+            docx_modificado = crear_documento_word(contenido_modificado)
             st.download_button(
-                label="Descargar PDF modificado",
-                data=pdf_modificado,
-                file_name="pdf_modificado.pdf",
-                mime="application/pdf"
+                label="Descargar documento Word modificado",
+                data=docx_modificado,
+                file_name="documento_modificado.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
