@@ -7,38 +7,28 @@ def modificar_pdf(archivo, modo_frase=True):
         doc = fitz.open(stream=archivo.read(), filetype="pdf")
         
         for pagina in doc:
-            blocks = pagina.get_text("dict")["blocks"]
-            for b in blocks:
-                if "lines" in b:
-                    for l in b["lines"]:
+            texto = pagina.get_text("dict")
+            for bloque in texto["blocks"]:
+                if "lines" in bloque:
+                    for linea in bloque["lines"]:
                         frase_cursiva = ""
-                        spans_cursiva = []
-                        for s in l["spans"]:
-                            if "italic" in s["font"].lower():
+                        for span in linea["spans"]:
+                            if span["flags"] & 2**3:  # Verifica si el texto está en cursiva
                                 if modo_frase:
-                                    frase_cursiva += s["text"] + " "
-                                    spans_cursiva.append(s)
+                                    frase_cursiva += span["text"] + " "
                                 else:
-                                    texto_modificado = f"_{s['text']}_"
-                                    pagina.add_redact_annot(s["bbox"])
-                                    pagina.apply_redactions()
-                                    pagina.insert_text(s["origin"], texto_modificado, fontname=s["font"], fontsize=s["size"])
+                                    pagina.draw_rect(span["bbox"], color=(1, 1, 1), fill=(1, 1, 1))
+                                    pagina.insert_text((span["origin"][0], span["origin"][1]), f"_{span['text']}_", fontsize=span["size"])
                             else:
                                 if modo_frase and frase_cursiva:
-                                    texto_modificado = f"_{frase_cursiva.strip()}_"
-                                    bbox = fitz.Rect(spans_cursiva[0]["bbox"]).include_rect(spans_cursiva[-1]["bbox"])
-                                    pagina.add_redact_annot(bbox)
-                                    pagina.apply_redactions()
-                                    pagina.insert_text(spans_cursiva[0]["origin"], texto_modificado, fontname=spans_cursiva[0]["font"], fontsize=spans_cursiva[0]["size"])
+                                    bbox = fitz.Rect(linea["bbox"])
+                                    pagina.draw_rect(bbox, color=(1, 1, 1), fill=(1, 1, 1))
+                                    pagina.insert_text((bbox.x0, bbox.y0), f"_{frase_cursiva.strip()}_", fontsize=linea["spans"][0]["size"])
                                     frase_cursiva = ""
-                                    spans_cursiva = []
-                        
                         if modo_frase and frase_cursiva:
-                            texto_modificado = f"_{frase_cursiva.strip()}_"
-                            bbox = fitz.Rect(spans_cursiva[0]["bbox"]).include_rect(spans_cursiva[-1]["bbox"])
-                            pagina.add_redact_annot(bbox)
-                            pagina.apply_redactions()
-                            pagina.insert_text(spans_cursiva[0]["origin"], texto_modificado, fontname=spans_cursiva[0]["font"], fontsize=spans_cursiva[0]["size"])
+                            bbox = fitz.Rect(linea["bbox"])
+                            pagina.draw_rect(bbox, color=(1, 1, 1), fill=(1, 1, 1))
+                            pagina.insert_text((bbox.x0, bbox.y0), f"_{frase_cursiva.strip()}_", fontsize=linea["spans"][0]["size"])
 
         output_buffer = io.BytesIO()
         doc.save(output_buffer, garbage=4, deflate=True, clean=True)
