@@ -1,68 +1,83 @@
 import streamlit as st
 import fitz
 import io
+from docx import Document
+from docx.shared import Pt
+import re
 
 def es_cursiva(font):
     return "italic" in font.lower() or "oblique" in font.lower()
 
-def modificar_pdf(archivo, modo_frase=True):
+def modificar_pdf(archivo):
     try:
         doc = fitz.open(stream=archivo.read(), filetype="pdf")
+        texto_completo = ""
         
         for pagina in doc:
             texto = pagina.get_text("dict")
             for bloque in texto["blocks"]:
                 if "lines" in bloque:
                     for linea in bloque["lines"]:
-                        frase_cursiva = ""
-                        spans_cursiva = []
                         for span in linea["spans"]:
                             if es_cursiva(span["font"]):
-                                if modo_frase:
-                                    frase_cursiva += span["text"] + " "
-                                    spans_cursiva.append(span)
-                                else:
-                                    pagina.draw_rect(span["bbox"], color=(1, 1, 1), fill=(1, 1, 1))
-                                    pagina.insert_text((span["origin"][0], span["origin"][1]), f"_{span['text']}_", fontsize=span["size"])
+                                texto_completo += f"_{span['text']}_"
                             else:
-                                if modo_frase and frase_cursiva:
-                                    bbox = fitz.Rect(spans_cursiva[0]["bbox"])
-                                    for s in spans_cursiva[1:]:
-                                        bbox |= fitz.Rect(s["bbox"])
-                                    pagina.draw_rect(bbox, color=(1, 1, 1), fill=(1, 1, 1))
-                                    pagina.insert_text((bbox.x0, bbox.y0), f"_{frase_cursiva.strip()}_", fontsize=spans_cursiva[0]["size"])
-                                    frase_cursiva = ""
-                                    spans_cursiva = []
-                        if modo_frase and frase_cursiva:
-                            bbox = fitz.Rect(spans_cursiva[0]["bbox"])
-                            for s in spans_cursiva[1:]:
-                                bbox |= fitz.Rect(s["bbox"])
-                            pagina.draw_rect(bbox, color=(1, 1, 1), fill=(1, 1, 1))
-                            pagina.insert_text((bbox.x0, bbox.y0), f"_{frase_cursiva.strip()}_", fontsize=spans_cursiva[0]["size"])
-
-        output_buffer = io.BytesIO()
-        doc.save(output_buffer, garbage=4, deflate=True, clean=True)
-        doc.close()
+                                texto_completo += span["text"]
+                        texto_completo += "\n"
+                    texto_completo += "\n"
         
-        return output_buffer
+        doc.close()
+        return texto_completo
     except Exception as e:
         st.error(f"Error al procesar el archivo: {str(e)}")
         return None
 
-st.title("Modificador de PDF - Añadir guiones bajos a texto en cursiva")
-st.write("Sube un archivo PDF para añadir guiones bajos a las frases en cursiva y descarga el PDF modificado.")
+def procesar_texto(texto):
+    # Eliminar saltos de línea específicos
+    lineas = texto.split('\n')
+    texto_procesado = ""
+    for i in range(len(lineas)):
+        if i < len(lineas) - 1:
+            linea_actual = lineas[i].strip()
+            if linea_actual and not linea_actual.endswith(('.', ':', ')', '?', '_')) and not linea_actual[-1].isdigit():
+                texto_procesado += linea_actual + " "
+            else:
+                texto_procesado += linea_actual + "\n"
+        else:
+            texto_procesado += lineas[i]
+    
+    return texto_procesado
+
+def crear_documento_word(texto):
+    doc = Document()
+    for parrafo in texto.split('\n'):
+        p = doc.add_paragraph()
+        partes = re.split(r'(_[^_]+_)', parrafo)
+        for parte in partes:
+            if parte.startswith('_') and parte.endswith('_'):
+                run = p.add_run(parte[1:-1])
+                run.italic = True
+            else:
+                p.add_run(parte)
+    
+    output_buffer = io.BytesIO()
+    doc.save(output_buffer)
+    return output_buffer.getvalue()
+
+st.title("Convertir PDF a Word con modificaciones")
+st.write("Sube un archivo PDF para convertirlo a Word, añadiendo guiones bajos a las cursivas y aplicando formato específico.")
 
 archivo = st.file_uploader("Subir archivo PDF", type="pdf")
 
-modo_frase = st.checkbox("Añadir guiones bajos a frases completas en cursiva", value=True)
-
 if archivo is not None:
     if st.button("Procesar PDF"):
-        pdf_modificado = modificar_pdf(archivo, modo_frase)
-        if pdf_modificado:
+        texto_modificado = modificar_pdf(archivo)
+        if texto_modificado:
+            texto_procesado = procesar_texto(texto_modificado)
+            docx_modificado = crear_documento_word(texto_procesado)
             st.download_button(
-                label="Descargar PDF modificado",
-                data=pdf_modificado,
-                file_name="pdf_modificado.pdf",
-                mime="application/pdf"
+                label="Descargar documento Word modificado",
+                data=docx_modificado,
+                file_name="documento_modificado.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
