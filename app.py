@@ -1,7 +1,6 @@
 import streamlit as st
 import fitz
 import io
-import re
 
 def modificar_pdf(archivo):
     try:
@@ -9,36 +8,24 @@ def modificar_pdf(archivo):
         doc = fitz.open(stream=archivo.read(), filetype="pdf")
         
         for pagina in doc:
-            # Obtener los bloques de texto de la página
-            bloques = pagina.get_text("dict")["blocks"]
-            for bloque in bloques:
+            texto_cursiva = ""
+            for bloque in pagina.get_text("dict")["blocks"]:
                 if "lines" in bloque:
                     for linea in bloque["lines"]:
-                        texto_cursiva = ""
-                        bbox_cursiva = None
                         for span in linea["spans"]:
                             if "italic" in span["font"].lower():
-                                if not texto_cursiva:
-                                    bbox_cursiva = span["bbox"]
-                                texto_cursiva += span["text"] + " "
-                            else:
-                                if texto_cursiva:
-                                    # Procesar el texto en cursiva acumulado
-                                    nuevo_texto = f"_{texto_cursiva.strip()}_"
-                                    pagina.add_redact_annot(bbox_cursiva, text=nuevo_texto)
-                                    pagina.apply_redactions()
-                                    texto_cursiva = ""
-                                    bbox_cursiva = None
-                        
-                        # Procesar cualquier texto en cursiva restante al final de la línea
-                        if texto_cursiva:
-                            nuevo_texto = f"_{texto_cursiva.strip()}_"
-                            pagina.add_redact_annot(bbox_cursiva, text=nuevo_texto)
-                            pagina.apply_redactions()
+                                texto_original = span["text"]
+                                texto_modificado = f"_{texto_original}_"
+                                
+                                # Reemplazar directamente el texto
+                                pagina.search_for(texto_original)
+                                pagina.add_redact_annot(span["bbox"])
+                                pagina.apply_redactions()
+                                pagina.insert_text(span["origin"], texto_modificado, fontname=span["font"], fontsize=span["size"])
 
         # Guardar el PDF modificado en memoria
         output_buffer = io.BytesIO()
-        doc.save(output_buffer)
+        doc.save(output_buffer, garbage=4, deflate=True, clean=True)
         doc.close()
         
         return output_buffer
