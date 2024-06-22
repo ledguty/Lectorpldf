@@ -2,33 +2,51 @@ import streamlit as st
 import fitz
 import io
 
+def es_cursiva(font):
+    return "italic" in font.lower() or "oblique" in font.lower()
+
 def modificar_pdf(archivo, modo_frase=True):
     try:
         doc = fitz.open(stream=archivo.read(), filetype="pdf")
         
         for pagina in doc:
             texto = pagina.get_text("dict")
+            st.write(f"Procesando página {pagina.number + 1}")
+st.write(f"Número de bloques: {len(texto['blocks'])}")
+for bloque in texto["blocks"]:
+    if "lines" in bloque:
+        for linea in bloque["lines"]:
+            for span in linea["spans"]:
+                if es_cursiva(span["font"]):
+                    st.write(f"Texto en cursiva encontrado: {span['text']}")
             for bloque in texto["blocks"]:
                 if "lines" in bloque:
                     for linea in bloque["lines"]:
                         frase_cursiva = ""
+                        spans_cursiva = []
                         for span in linea["spans"]:
-                            if span["flags"] & 2**3:  # Verifica si el texto está en cursiva
+                            if es_cursiva(span["font"]):
                                 if modo_frase:
                                     frase_cursiva += span["text"] + " "
+                                    spans_cursiva.append(span)
                                 else:
                                     pagina.draw_rect(span["bbox"], color=(1, 1, 1), fill=(1, 1, 1))
                                     pagina.insert_text((span["origin"][0], span["origin"][1]), f"_{span['text']}_", fontsize=span["size"])
                             else:
                                 if modo_frase and frase_cursiva:
-                                    bbox = fitz.Rect(linea["bbox"])
+                                    bbox = fitz.Rect(spans_cursiva[0]["bbox"])
+                                    for s in spans_cursiva[1:]:
+                                        bbox |= fitz.Rect(s["bbox"])
                                     pagina.draw_rect(bbox, color=(1, 1, 1), fill=(1, 1, 1))
-                                    pagina.insert_text((bbox.x0, bbox.y0), f"_{frase_cursiva.strip()}_", fontsize=linea["spans"][0]["size"])
+                                    pagina.insert_text((bbox.x0, bbox.y0), f"_{frase_cursiva.strip()}_", fontsize=spans_cursiva[0]["size"])
                                     frase_cursiva = ""
+                                    spans_cursiva = []
                         if modo_frase and frase_cursiva:
-                            bbox = fitz.Rect(linea["bbox"])
+                            bbox = fitz.Rect(spans_cursiva[0]["bbox"])
+                            for s in spans_cursiva[1:]:
+                                bbox |= fitz.Rect(s["bbox"])
                             pagina.draw_rect(bbox, color=(1, 1, 1), fill=(1, 1, 1))
-                            pagina.insert_text((bbox.x0, bbox.y0), f"_{frase_cursiva.strip()}_", fontsize=linea["spans"][0]["size"])
+                            pagina.insert_text((bbox.x0, bbox.y0), f"_{frase_cursiva.strip()}_", fontsize=spans_cursiva[0]["size"])
 
         output_buffer = io.BytesIO()
         doc.save(output_buffer, garbage=4, deflate=True, clean=True)
